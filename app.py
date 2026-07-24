@@ -3,7 +3,7 @@ from flask import Flask, abort, jsonify, render_template, request
 
 app = Flask(__name__)
 
-def get_vid(q):
+def get_vid(q):  
     try:
         req = urllib.request.Request(f"https://www.youtube.com/results?search_query={urllib.parse.quote(q)}", headers={"User-Agent": "Mozilla/5.0"})
         ids = re.findall(r"\"videoId\":\"([^\"]+)\"", urllib.request.urlopen(req, timeout=5).read().decode("utf-8"))
