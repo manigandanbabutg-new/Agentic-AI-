@@ -8,8 +8,11 @@ HTML = """
 <h2>🎤 Voice Agent</h2>
 <button onclick="start()">Speak</button>
 <p id="status"></p>
+
 <script>
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition,s=document.getElementById("status");
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition,
+s=document.getElementById("status");
+
 async function send(cmd){
  let r=await fetch("/agent",{method:"POST",headers:{"Content-Type":"application/json"},
  body:JSON.stringify({text_command:cmd})});
@@ -18,6 +21,7 @@ async function send(cmd){
  s.innerText="Opening...";
  window.open(d.url,"_blank");
 }
+
 function start(){
  if(!SR)return alert("Use Chrome/Edge");
  let rec=new SR();
@@ -26,7 +30,9 @@ function start(){
  rec.onerror=e=>s.innerText=e.error;
  rec.start();
 }
-</script></body></html>
+</script>
+</body>
+</html>
 """
 
 def find_first_video_id(query):
