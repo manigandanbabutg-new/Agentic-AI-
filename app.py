@@ -1,151 +1,97 @@
-import os
-import re
-import urllib.parse
-import urllib.request
-from flask import Flask
-from flask import abort
-from flask import jsonify
-from flask import render_template_string
-from flask import request
+import os, re, urllib.parse, urllib.request
+from flask import Flask, request, jsonify, render_template_string, abort
 
 app = Flask(__name__)
 
 HTML = """
 <!DOCTYPE html>
 <html>
-<head>
-<title>Voice Agent</title>
+<head><title>Voice Agent</title>
 <style>
-body {
-  font-family: sans-serif;
-  max-width: 500px;
-  margin: 50px auto;
-}
-button {
-  padding: 10px;
-  background: #4f46e5;
-  color: #fff;
-  border: none;
-  border-radius: 5px;
-}
-</style>
-</head>
+body{font-family:Arial;max-width:550px;margin:60px auto}
+button{padding:10px 18px;background:#4f46e5;color:#fff;border:0;border-radius:6px;cursor:pointer}
+#transcript{margin-top:20px;font-style:italic}#status{font-size:13px;color:#555;word-break:break-all}
+</style></head>
 <body>
-<h1>Voice Agent</h1>
-<button onclick="startListening()">
-🎤 Speak Now
-</button>
-<div id="status"></div>
+<h2>🎤 Voice Command Agent</h2>
+<button onclick="start()">Speak (YouTube / Gmail)</button>
+<div id="transcript"></div><div id="status"></div>
 <script>
-const Speech = window.SpeechRecognition
-  || window.webkitSpeechRecognition;
+const t=document.getElementById("transcript"),s=document.getElementById("status");
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 
-async function sendCommand(cmd) {
-  document.getElementById('status').innerText = 
-    'Processing...';
-  const res = await fetch('/agent', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      text_command: cmd
-    })
-  });
-  const data = await res.json();
-  if (data.error) return;
-  window.open(data.url, '_blank');
+async function send(cmd){
+    t.innerText='"'+cmd+'"'; s.innerText="Processing...";
+    let r=await fetch("/agent",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({text_command:cmd})});
+    let d=await r.json();
+    if(d.error) return s.innerText=d.error;
+    s.innerText="Opening: "+d.url;
+    window.open(d.url,"_blank");
 }
 
-function startListening() {
-  if (!Speech) return;
-  const rec = new Speech();
-  rec.lang = 'en-US';
-  rec.onresult = e => {
-    sendCommand(e.results[0][0].transcript);
-  };
-  rec.start();
+function start(){
+    if(!SR) return alert("Use Chrome or Edge");
+    let rec=new SR();
+    rec.lang="en-US";
+    rec.onresult=e=>send(e.results[0][0].transcript);
+    rec.onerror=e=>s.innerText=e.error;
+    rec.start();
 }
-</script>
-</body>
-</html>
+</script></body></html>
 """
 
-def find_first_video_id(query):
+def first_video(query):
     try:
-        encoded = urllib.parse.quote_plus(query)
-        url = f"https://www.youtube.com/results?search_query={encoded}"
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Cookie": "SOCS=CAI"
-        }
-        req = urllib.request.Request(
-            url, 
-            headers=headers
-        )
-        res = urllib.request.urlopen(
-            req, 
-            timeout=5
-        )
-        html = res.read().decode('utf-8')
-        pattern = r'(?:"videoId":|/watch\?v=)"([a-zA-Z0-9_-]{11})"'
-        match = re.search(pattern, html)
-        if match:
-            return match.group(1)
-        return None
-    except Exception:
+        url="https://www.youtube.com/results?search_query="+urllib.parse.quote_plus(query)
+        req=urllib.request.Request(url,headers={
+            "User-Agent":"Mozilla/5.0",
+            "Accept-Language":"en-US",
+            "Cookie":"SOCS=CAI"
+        })
+        html=urllib.request.urlopen(req,timeout=5).read().decode()
+        m=re.search(r'(?:"videoId":|/watch\?v=)"([\\w-]{11})"',html)
+        return m.group(1) if m else None
+    except:
         return None
 
-def build_youtube_target(command):
-    wants_play = "play" in command
-    clean = re.sub(
-        r"(open youtube|play|search)", 
-        "", 
-        command
-    ).strip()
-    if not clean:
-        return "https://www.youtube.com"
-    if wants_play:
-        vid = find_first_video_id(clean)
-        if vid:
-            return f"https://www.youtube.com/watch?v={vid}&autoplay=1"
-    encoded = urllib.parse.quote_plus(clean)
-    return f"https://www.youtube.com/results?search_query={encoded}"
+def youtube(cmd):
+    play="play" in cmd
+    q=re.sub(r"(open youtube( and (play|search))?|play|search( for)?|on youtube)","",cmd).strip()
+    if not q: return "https://www.youtube.com"
+    if play:
+        vid=first_video(q)
+        if vid: return f"https://www.youtube.com/watch?v={vid}&autoplay=1"
+    return "https://www.youtube.com/results?search_query="+urllib.parse.quote_plus(q)
 
-def build_gmail_target(command):
-    to = ""
-    body = ""
-    m1 = re.search(r"to\s+(\S+)", command)
-    if m1:
-        to = m1.group(1)
-    m2 = re.search(r"saying\s+(.*)", command)
-    if m2:
-        body = m2.group(1)
-    params = urllib.parse.urlencode({
-        'view': 'cm',
-        'to': to,
-        'body': body
+def gmail(cmd):
+    to=body=""
+    m=re.search(r"to\s+([a-zA-Z0-9._%+\s]+?)(?=\s+(and|type|saying|$))",cmd)
+    if m:
+        to=m.group(1).replace(" ","")
+        if "@" not in to: to+="@gmail.com"
+    m=re.search(r"(type|saying)\s+(.*)",cmd)
+    if m: body=m.group(2).capitalize()
+    if not(to or body): return "https://mail.google.com"
+    return "https://mail.google.com/mail/u/0/?"+urllib.parse.urlencode({
+        "view":"cm","fs":"1","to":to,"body":body
     })
-    return f"https://mail.google.com/mail/u/0/?{params}"
 
 @app.route("/")
 def home():
     return render_template_string(HTML)
 
-@app.route("/agent", methods=["POST"])
+@app.post("/agent")
 def agent():
-    data = request.get_json(silent=True)
-    if not data:
-        abort(400)
-    cmd = data.get("text_command", "")
-    cmd = cmd.lower()
-    if "play" in cmd:
-        url = build_youtube_target(cmd)
-        return jsonify({"url": url})
-    if "gmail" in cmd:
-        url = build_gmail_target(cmd)
-        return jsonify({"url": url})
-    return jsonify({"error": "Unsupported"})
+    data=request.get_json(silent=True)
+    if not data or "text_command" not in data:
+        abort(400,"Missing command")
+    cmd=data["text_command"].lower().strip()
+    if "youtube" in cmd or "play" in cmd:
+        return jsonify(action="open_tab",url=youtube(cmd))
+    if any(x in cmd for x in ["gmail","mail","email"]):
+        return jsonify(action="open_tab",url=gmail(cmd))
+    return jsonify(error="Only YouTube and Gmail commands supported.")
 
-if __name__ == "__main__":
-    app.run(port=8000)
+if __name__=="__main__":
+    app.run(host="0.0.0.0",port=int(os.getenv("PORT",8000)))
