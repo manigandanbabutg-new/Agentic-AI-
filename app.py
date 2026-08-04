@@ -4,10 +4,71 @@ from flask import Flask, request, jsonify, render_template_string, abort
 app = Flask(__name__)
 
 HTML = """
-<!DOCTYPE html><html><body>
-<h2>🎤 Voice Agent</h2>
-<button onclick="start()">Speak</button>
-<p id="status"></p>
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Arial, sans-serif;
+}
+
+body{
+    background:#000;
+    color:#fff;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+}
+
+.container{
+    text-align:center;
+}
+
+h2{
+    font-size:2.5rem;
+    margin-bottom:40px;
+    letter-spacing:1px;
+}
+
+button{
+    width:120px;
+    height:120px;
+    border-radius:50%;
+    border:none;
+    background:#ffffff;
+    color:#000;
+    font-size:18px;
+    font-weight:bold;
+    cursor:pointer;
+    transition:.3s;
+}
+
+button:hover{
+    transform:scale(1.08);
+    box-shadow:0 0 25px rgba(255,255,255,.5);
+}
+
+#status{
+    margin-top:30px;
+    font-size:18px;
+    color:#ccc;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+    <h2>🎤 Voice Agent</h2>
+
+    <button onclick="start()">Speak</button>
+
+    <p id="status"></p>
+</div>
 
 <script>
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition,
@@ -31,9 +92,11 @@ function start(){
  rec.start();
 }
 </script>
+
 </body>
 </html>
 """
+
 
 def find_first_video_id(query):
     try:
