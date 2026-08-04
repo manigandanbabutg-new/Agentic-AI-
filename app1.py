@@ -1,142 +1,127 @@
-import os
-import re
-import urllib.parse
-import urllib.request
-from flask import Flask, abort, jsonify, render_template, request
-
-# ---------------------- Flask App ----------------------
+import os, re, urllib.parse, urllib.request
+from flask import Flask, request, jsonify, render_template_string, abort
 
 app = Flask(__name__)
 
-# ------------------ YouTube Video Finder ------------------
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+*{
+   
+}
 
-def get_vid(query):
+body{
+   
+}
+
+.container{
+    
+}
+
+h2{
+  
+}
+
+button{
+   
+}
+
+button:hover{
+    
+}
+
+#status{
+   
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+    <h2>🎤 Voice Agent</h2>
+
+    <button onclick="start()">Speak</button>
+
+    <p id="status"></p>
+</div>
+
+<script>
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition,
+s=document.getElementById("status");
+
+async function send(cmd){
+ let r=await fetch("/agent",{method:"POST",headers:{"Content-Type":"application/json"},
+ body:JSON.stringify({text_command:cmd})});
+ let d=await r.json();
+ if(d.error)return s.innerText=d.error;
+ s.innerText="Opening...";
+ window.open(d.url,"_blank");
+}
+
+function start(){
+ if(!SR)return alert("Use Chrome/Edge");
+ let rec=new SR();
+ rec.lang="en-US";
+ rec.onresult=e=>send(e.results[0][0].transcript);
+ rec.onerror=e=>s.innerText=e.error;
+ rec.start();
+}
+</script>
+
+</body>
+</html>
+"""
+
+
+def find_first_video_id(query):
     try:
-        url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
+        req=urllib.request.Request(
+            "https://www.youtube.com/results?search_query="+urllib.parse.quote_plus(query),
+            headers={"User-Agent":"Mozilla/5.0","Accept-Language":"en-US","Cookie":"SOCS=CAI"})
+        html=urllib.request.urlopen(req,timeout=5).read().decode()
+        m=re.search(r'(?:"videoId":|/watch\?v=)"([A-Za-z0-9_-]{11})"',html)
+        return m.group(1) if m else None
+    except Exception as e:
+        print("Scraper:",e); return None
 
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "Mozilla/5.0"}
-        )
+def build_youtube_target(cmd):
+    play="play" in cmd
+    q=re.sub(r"(open youtube( and (play|search))?|play|search( for)?|on youtube)","",cmd).strip()
+    if not q: return "https://www.youtube.com"
+    if play:
+        vid=find_first_video_id(q)
+        if vid: return f"https://www.youtube.com/watch?v={vid}&autoplay=1"
+    return "https://www.youtube.com/results?search_query="+urllib.parse.quote_plus(q)
 
-        html = urllib.request.urlopen(req, timeout=5).read().decode("utf-8")
+def build_gmail_target(cmd):
+    to=body=""
+    if m:=re.search(r"to\s+([a-zA-Z0-9._%+\s]+?)(?=\s+(and|type|saying|$))",cmd):
+        to=m.group(1).replace(" ","")
+        if "@" not in to: to+="@gmail.com"
+    if m:=re.search(r"(type|saying)\s+(.*)",cmd):
+        body=m.group(2).capitalize()
+    if not(to or body): return "https://mail.google.com"
+    return "https://mail.google.com/mail/u/0/?"+urllib.parse.urlencode(
+        {"view":"cm","fs":"1","to":to,"body":body})
 
-        ids = re.findall(r'"videoId":"([^"]+)"', html)
-
-        return ids[0] if ids else None
-
-    except Exception:
-        return None
-
-
-# ------------------------ Routes ------------------------
-
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
-    return render_template("index.html")
+    return render_template_string(HTML)
 
-
-@app.route("/agent", methods=["POST"])
-def ai_agent_router():
-
-    data = request.get_json(silent=True)
-
+@app.post("/agent")
+def agent():
+    data=request.get_json(silent=True)
     if not data or "text_command" not in data:
-        abort(400, description="Missing 'text_command' in request body")
+        abort(400,description="Missing command")
+    cmd=data["text_command"].lower().strip()
+    if "youtube" in cmd or "play" in cmd:
+        return jsonify(action="open_tab",url=build_youtube_target(cmd))
+    if any(k in cmd for k in ["gmail","email","mail"]):
+        return jsonify(action="open_tab",url=build_gmail_target(cmd))
+    return jsonify(error="Only YouTube and Gmail commands supported.")
 
-    cmd = data["text_command"].strip().lower()
-
-    # ---------------- YouTube ----------------
-
-    if "youtube" in cmd:
-
-        query = cmd
-
-        for phrase in [
-            "open youtube and search",
-            "open youtube and play",
-            "open youtube",
-            "search for",
-            "search",
-            "and play",
-            "play",
-            "on youtube",
-        ]:
-            query = query.replace(phrase, "")
-
-        query = query.strip()
-
-        if not query:
-            target = "https://www.youtube.com"
-
-        elif (vid := get_vid(query)):
-            target = f"https://www.youtube.com/watch?v={vid}&autoplay=1"
-
-        else:
-            target = (
-                "https://www.youtube.com/results?search_query="
-                f"{urllib.parse.quote_plus(query)}"
-            )
-
-    # ---------------- Gmail ----------------
-
-    elif any(word in cmd for word in ["gmail", "email", "mail", "message"]):
-
-        to = ""
-        body = ""
-
-        if match := re.search(
-            r"(?:update|send|mail|message)?\s*to\s+([a-zA-Z0-9._%+\s]+?)(?=\s+(?:and|type|write|saying|with|content|that|message|$))",
-            cmd,
-        ):
-            contact = (
-                match.group(1)
-                .strip()
-                .replace(" at ", "@")
-                .replace(" dot ", ".")
-                .replace(" ", "")
-            )
-
-            to = contact if "@" in contact else f"{contact}@gmail.com"
-
-        if match := re.search(
-            r"(?:type|write|saying|content|message|that)\s+(.*)",
-            cmd,
-        ):
-            text = match.group(1).strip()
-
-            if text:
-                body = text[0].upper() + text[1:]
-
-        if to or body:
-            target = (
-                "https://mail.google.com/mail/u/0/?"
-                f"view=cm&fs=1&to={urllib.parse.quote(to)}"
-                f"&body={urllib.parse.quote(body)}"
-            )
-        else:
-            target = "https://mail.google.com"
-
-    # ---------------- Google ----------------
-
-    else:
-        target = (
-            "https://www.google.com/search?q="
-            f"{urllib.parse.quote_plus(cmd)}"
-        )
-
-    return jsonify(
-        {
-            "action": "open_tab",
-            "url": target,
-        }
-    )
-
-
-# -------------------- Run Server --------------------
-
-if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8000)),
-    )
+if __name__=="__main__":
+    app.run(host="0.0.0.0",port=int(os.environ.get("PORT",8000)))
