@@ -21,7 +21,7 @@ HTML = """
             margin: 60px auto;
         }
         button {
-            padding: 10px 18px;
+            padding: 30px 30px;
             background: #4f46e5;
             color: #fff;
             border: 0;
