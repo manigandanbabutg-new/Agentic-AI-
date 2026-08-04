@@ -25,7 +25,7 @@ HTML = """
             background: #4f46e5;
             color: #fff;
             border: 0;
-            border-radius: 6px;
+            border-radius: 56px;
             cursor: pointer;
         }
         #transcript {
