@@ -91,7 +91,7 @@ function start(){
  rec.onerror=e=>s.innerText=e.error;
  rec.start();
 }
-<\//script>
+</script>
 
 </body>
 </html>
